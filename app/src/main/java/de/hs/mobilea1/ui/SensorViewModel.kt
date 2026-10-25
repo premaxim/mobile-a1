@@ -8,6 +8,7 @@ import android.location.Location
 import android.location.altitude.AltitudeConverter
 import android.os.Build
 import android.os.SystemClock
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.patrykandpatrick.vico.compose.cartesian.data.CartesianChartModelProducer
@@ -18,7 +19,9 @@ import de.hs.mobilea1.data.PressureSample
 import de.hs.mobilea1.data.RingBuffer
 import de.hs.mobilea1.log.ChainLogger
 import de.hs.mobilea1.notify.ShakeNotifier
+import de.hs.mobilea1.processing.MeasurementResult
 import de.hs.mobilea1.processing.MovingAverage
+import de.hs.mobilea1.processing.PressureMeasurement
 import de.hs.mobilea1.processing.RateMeter
 import de.hs.mobilea1.processing.ShakeDetector
 import de.hs.mobilea1.sensor.GnssSource
@@ -59,6 +62,8 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     private val pressureAverage = MovingAverage(PRESSURE_WINDOW)
     private val shakeDetector = ShakeDetector()
     private var referencePressure: Float? = null
+    private val pressureMeasurement = PressureMeasurement()
+    private val measurementResults = ArrayList<MeasurementResult>()
 
     private val accelLog = ChainLogger("ACC", every = 50)
     private val baroLog = ChainLogger("BARO", every = 10)
@@ -99,6 +104,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun onStop() {
+        pressureMeasurement.cancel()
         accelSource.stop()
         baroSource.stop()
         gnssSource.stop()
@@ -125,6 +131,11 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     /** Nach Rückkehr aus dem Berechtigungsdialog. */
     fun onPermissionsChanged() {
         if (tickerJob != null) startGnss()
+    }
+
+    /** Messmodus: Rohwerte des Barometers 20 s lang mitteln. */
+    fun startPressureMeasurement() {
+        if (!pressureMeasurement.isRunning) pressureMeasurement.start(SystemClock.elapsedRealtimeNanos())
     }
 
     fun dismissBanner() {
@@ -169,6 +180,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         val seq = baroLog.nextSeq()
         seq?.let { baroLog.raw(it, "t=$t ns p=$raw hPa") }
 
+        pressureMeasurement.add(raw)
         val smoothed = pressureAverage.add(raw)
         // p0 und Δh erst aus einem vollständig geglätteten Wert bestimmen (nicht aus einem Einzelwert).
         val settled = pressureAverage.isFull
@@ -255,6 +267,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     private suspend fun tick() {
         val now = SystemClock.elapsedRealtimeNanos()
         if (banner != null && now > bannerUntilNanos) banner = null
+        pressureMeasurement.finishIfDue(now)?.let(::onMeasurementFinished)
 
         val state = _uiState.value
         val newState = state.copy(
@@ -280,9 +293,30 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         )
     }
 
+    private fun onMeasurementFinished(result: MeasurementResult) {
+        measurementResults.add(result)
+        val nr = measurementResults.size
+        Log.i(TAG_MEASUREMENT, "#$nr p=${result.meanHpa} hPa s=${result.stdDevHpa} hPa n=${result.count}")
+    }
+
+    private fun formatMeasurement(index: Int): String {
+        val r = measurementResults[index]
+        val line = "#${index + 1}: ${r.meanHpa.format(3)} hPa ± ${r.stdDevHpa.format(3)} (n=${r.count})"
+        if (index == 0) return line
+        val previous = measurementResults[index - 1].meanHpa
+        val deltaP = r.meanHpa - previous
+        val deltaH = SensorManager.getAltitude(previous.toFloat(), r.meanHpa.toFloat())
+        return "$line\n   Δp = ${deltaP.format(3)} hPa ≙ Δh = ${deltaH.format(2)} m"
+    }
+
     private fun buildBarometerUi(previous: BarometerUi): BarometerUi {
-        val sample = pressureBuffer.lastOrNull() ?: return previous
-        return previous.copy(
+        val now = SystemClock.elapsedRealtimeNanos()
+        val withMeasurement = previous.copy(
+            measurementRemainingS = if (pressureMeasurement.isRunning) pressureMeasurement.remainingSeconds(now) else null,
+            measurements = measurementResults.indices.map(::formatMeasurement),
+        )
+        val sample = pressureBuffer.lastOrNull() ?: return withMeasurement
+        return withMeasurement.copy(
             pressure = sample.smoothedHpa.format(2) + " hPa",
             relativeAltitude = sample.relativeAltitudeM?.let { it.format(2) + " m" } ?: PLACEHOLDER,
         )
@@ -330,6 +364,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
 
     private companion object {
         const val UI_INTERVAL_MS = 100L
+        const val TAG_MEASUREMENT = "MESSUNG"
         const val PRESSURE_WINDOW = 10
         const val BANNER_DURATION_NANOS = 5_000_000_000L
 

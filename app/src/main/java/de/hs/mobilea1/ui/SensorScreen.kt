@@ -30,6 +30,7 @@ class SensorScreenActions(
     val onModeChange: (DisplayMode) -> Unit,
     val onSamplingRateChange: (AccelSamplingRate) -> Unit,
     val onDismissBanner: () -> Unit,
+    val onStartPressureMeasurement: () -> Unit,
     val onOpenAppSettings: () -> Unit,
     val onOpenLocationSettings: () -> Unit,
 )

@@ -24,6 +24,10 @@ data class BarometerUi(
     val available: Boolean,
     val pressure: String = PLACEHOLDER,
     val relativeAltitude: String = PLACEHOLDER,
+    /** Messmodus: verbleibende Sekunden, `null` wenn keine Messung läuft. */
+    val measurementRemainingS: Int? = null,
+    /** Formatierte Ergebnisse der bisherigen Messungen (älteste zuerst). */
+    val measurements: List<String> = emptyList(),
 )
 
 sealed interface GnssUi {

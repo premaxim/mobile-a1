@@ -2,6 +2,7 @@ package de.hs.mobilea1
 
 import de.hs.mobilea1.data.RingBuffer
 import de.hs.mobilea1.processing.MovingAverage
+import de.hs.mobilea1.processing.PressureMeasurement
 import de.hs.mobilea1.processing.RateMeter
 import de.hs.mobilea1.processing.ShakeDetector
 import de.hs.mobilea1.ui.lastSeconds
@@ -39,6 +40,20 @@ class ProcessingTest {
         assertTrue(average.isFull)
         average.reset()
         assertFalse(average.isFull)
+    }
+
+    @Test
+    fun pressureMeasurementAveragesRawValuesOverDuration() {
+        val s = 1_000_000_000L
+        val measurement = PressureMeasurement(durationNanos = 20 * s)
+        measurement.start(0)
+        listOf(924.0f, 924.2f, 924.1f).forEach(measurement::add)
+        assertNull(measurement.finishIfDue(19 * s))
+        val result = measurement.finishIfDue(20 * s)!!
+        assertEquals(924.1, result.meanHpa, 1e-4)
+        assertEquals(0.1, result.stdDevHpa, 1e-4)
+        assertEquals(3, result.count)
+        assertFalse(measurement.isRunning)
     }
 
     @Test

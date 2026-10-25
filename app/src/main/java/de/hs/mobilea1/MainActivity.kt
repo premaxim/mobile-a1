@@ -42,6 +42,7 @@ class MainActivity : ComponentActivity() {
             onModeChange = viewModel::setMode,
             onSamplingRateChange = viewModel::setAccelSamplingRate,
             onDismissBanner = viewModel::dismissBanner,
+            onStartPressureMeasurement = viewModel::startPressureMeasurement,
             onOpenAppSettings = ::openAppSettings,
             onOpenLocationSettings = ::openLocationSettings,
         )

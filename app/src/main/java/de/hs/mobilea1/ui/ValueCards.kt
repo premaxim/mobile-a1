@@ -1,6 +1,11 @@
 package de.hs.mobilea1.ui
 
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalView
 
 @Composable
 fun ValueCards(state: UiState, actions: SensorScreenActions) {
@@ -26,6 +31,7 @@ fun ValueCards(state: UiState, actions: SensorScreenActions) {
         }
         ValueRow("Luftdruck p", baro.pressure)
         ValueRow("Relative Höhe Δh", baro.relativeAltitude)
+        PressureMeasurementControls(baro, actions.onStartPressureMeasurement)
     }
 
     SensorCard("GNSS") {
@@ -37,4 +43,22 @@ fun ValueCards(state: UiState, actions: SensorScreenActions) {
             ValueRow("Geschwindigkeit", gnss.speed)
         }
     }
+}
+
+/** Messmodus für Experimente: 20 s Rohwerte mitteln, Ergebnisse und Differenzen anzeigen. */
+@Composable
+private fun PressureMeasurementControls(baro: BarometerUi, onStart: () -> Unit) {
+    val remaining = baro.measurementRemainingS
+    if (remaining != null) {
+        // Während der Messung darf der Bildschirm nicht ausgehen (sonst werden die Sensoren abgemeldet).
+        val view = LocalView.current
+        DisposableEffect(Unit) {
+            view.keepScreenOn = true
+            onDispose { view.keepScreenOn = false }
+        }
+    }
+    OutlinedButton(onClick = onStart, enabled = remaining == null) {
+        Text(if (remaining == null) "20 s mitteln" else "Messung läuft … $remaining s")
+    }
+    baro.measurements.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
 }
