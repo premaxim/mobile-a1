@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Sensor-Monitor</string>
+    <string name="notification_channel_name">Erschütterungswarnungen</string>
+    <string name="notification_channel_description">Warnt bei starker Erschütterung des Geräts</string>
+    <string name="shake_title">Starke Erschütterung</string>
+    <string name="shake_text">|a| = %1$s m/s² (Grenzwert 25 m/s²)</string>
+</resources>
