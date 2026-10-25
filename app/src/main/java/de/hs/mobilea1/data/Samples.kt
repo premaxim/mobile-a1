@@ -13,7 +13,8 @@ data class PressureSample(
     val timestampNanos: Long,
     val rawHpa: Float,
     val smoothedHpa: Float,
-    val relativeAltitudeM: Float,
+    /** `null`, solange das Mittelwertfenster noch nicht gefüllt ist. */
+    val relativeAltitudeM: Float?,
 )
 
 data class GnssSample(

@@ -32,7 +32,7 @@ fun ValueCards(state: UiState, actions: SensorScreenActions) {
         GnssStatusContent(state.gnss, actions) { gnss ->
             ValueRow("Breite", gnss.latitude)
             ValueRow("Länge", gnss.longitude)
-            ValueRow("Höhe", gnss.altitude)
+            ValueRow("Höhe ü. NN", gnss.altitude)
             ValueRow("Genauigkeit", gnss.accuracy)
             ValueRow("Geschwindigkeit", gnss.speed)
         }

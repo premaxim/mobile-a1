@@ -33,6 +33,7 @@ import com.patrykandpatrick.vico.compose.cartesian.rememberCartesianChart
 import com.patrykandpatrick.vico.compose.cartesian.rememberVicoScrollState
 import com.patrykandpatrick.vico.compose.cartesian.rememberVicoZoomState
 import com.patrykandpatrick.vico.compose.common.Fill
+import com.patrykandpatrick.vico.compose.common.data.ExtraStore
 
 class ChartProducers(
     val accel: CartesianChartModelProducer,
@@ -40,13 +41,13 @@ class ChartProducers(
     val gnss: CartesianChartModelProducer,
 )
 
-private data class Series(val label: String, val color: Color)
+private data class Series(val label: String, val color: Color, val dashed: Boolean = false)
 
 private val accelSeries = listOf(
     Series("a_x", Color(0xFFE53935)),
     Series("a_y", Color(0xFF43A047)),
     Series("a_z", Color(0xFF1E88E5)),
-    Series("|a|", Color(0xFF6D4C41)),
+    Series("|a| (gestrichelt)", Color(0xFF6D4C41), dashed = true),
 )
 private val barometerSeries = listOf(Series("Δh [m]", Color(0xFF8E24AA)))
 private val gnssSeries = listOf(Series("v [m/s]", Color(0xFFFB8C00)))
@@ -78,13 +79,19 @@ fun ChartCards(state: UiState, charts: ChartProducers, actions: SensorScreenActi
 
 @Composable
 private fun LineChart(producer: CartesianChartModelProducer, series: List<Series>) {
-    val lines = series.map { LineCartesianLayer.rememberLine(LineCartesianLayer.LineFill.single(Fill(it.color))) }
+    val lines = series.map {
+        val fill = LineCartesianLayer.LineFill.single(Fill(it.color))
+        // Gestrichelt, damit eine deckungsgleiche Linie darunter (z. B. a_z bei flachem Gerät) sichtbar bleibt.
+        if (it.dashed) {
+            LineCartesianLayer.rememberLine(fill, stroke = LineCartesianLayer.LineStroke.Dashed())
+        } else {
+            LineCartesianLayer.rememberLine(fill)
+        }
+    }
     val chart = rememberCartesianChart(
         rememberLineCartesianLayer(
             lineProvider = LineCartesianLayer.LineProvider.series(lines),
-            rangeProvider = remember {
-                CartesianLayerRangeProvider.fixed(minX = -CHART_WINDOW_SECONDS.toDouble(), maxX = 0.0)
-            },
+            rangeProvider = remember { HoldingRangeProvider() },
         ),
         startAxis = VerticalAxis.rememberStart(
             valueFormatter = remember { CartesianValueFormatter.decimal(decimalCount = 1, decimalSeparator = ",") },
@@ -130,3 +137,26 @@ private fun LegendItem(series: Series) {
 
 /** Rasterweite der x-Werte, siehe [lastSeconds]. */
 private const val X_STEP = 0.1
+
+/**
+ * Feste x-Achse (−30 … 0 s). Die y-Achse übernimmt das bisher kleinste bzw. größte Minimum/Maximum und
+ * wächst damit nur, statt bei jeder Aktualisierung neu zu skalieren (sonst "zittert" das Diagramm).
+ */
+private class HoldingRangeProvider : CartesianLayerRangeProvider {
+    private var heldMinY = Double.POSITIVE_INFINITY
+    private var heldMaxY = Double.NEGATIVE_INFINITY
+
+    override fun getMinX(minX: Double, maxX: Double, extraStore: ExtraStore) = -CHART_WINDOW_SECONDS.toDouble()
+
+    override fun getMaxX(minX: Double, maxX: Double, extraStore: ExtraStore) = 0.0
+
+    override fun getMinY(minY: Double, maxY: Double, extraStore: ExtraStore): Double {
+        heldMinY = minOf(heldMinY, minY)
+        return heldMinY
+    }
+
+    override fun getMaxY(minY: Double, maxY: Double, extraStore: ExtraStore): Double {
+        heldMaxY = maxOf(heldMaxY, maxY)
+        return heldMaxY
+    }
+}

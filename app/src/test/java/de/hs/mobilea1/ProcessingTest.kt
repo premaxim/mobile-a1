@@ -31,6 +31,17 @@ class ProcessingTest {
     }
 
     @Test
+    fun movingAverageIsFullAfterWindow() {
+        val average = MovingAverage(10)
+        repeat(9) { average.add(1f) }
+        assertFalse(average.isFull)
+        average.add(1f)
+        assertTrue(average.isFull)
+        average.reset()
+        assertFalse(average.isFull)
+    }
+
+    @Test
     fun shakeDetectorRespectsThresholdAndCooldown() {
         val detector = ShakeDetector()
         val s = 1_000_000_000L

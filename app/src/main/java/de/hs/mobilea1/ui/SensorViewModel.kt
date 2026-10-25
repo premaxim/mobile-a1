@@ -5,6 +5,8 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorManager
 import android.location.Location
+import android.location.altitude.AltitudeConverter
+import android.os.Build
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -21,6 +23,7 @@ import de.hs.mobilea1.processing.RateMeter
 import de.hs.mobilea1.processing.ShakeDetector
 import de.hs.mobilea1.sensor.GnssSource
 import de.hs.mobilea1.sensor.SensorSource
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +32,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.IOException
 import java.util.Locale
 import kotlin.math.sqrt
 
@@ -43,6 +48,8 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     private val baroSource = SensorSource(sensorManager, Sensor.TYPE_PRESSURE)
     private val gnssSource = GnssSource(application)
     private val notifier = ShakeNotifier(application)
+    private val altitudeConverter =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) AltitudeConverter() else null
 
     private val accelBuffer = RingBuffer<AccelSample>(ACCEL_CAPACITY)
     private val pressureBuffer = RingBuffer<PressureSample>(PRESSURE_CAPACITY)
@@ -163,8 +170,11 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         seq?.let { baroLog.raw(it, "t=$t ns p=$raw hPa") }
 
         val smoothed = pressureAverage.add(raw)
-        val reference = referencePressure ?: smoothed.also { referencePressure = it }
-        val deltaH = SensorManager.getAltitude(reference, smoothed)
+        // p0 und Δh erst aus einem vollständig geglätteten Wert bestimmen (nicht aus einem Einzelwert).
+        val settled = pressureAverage.isFull
+        if (referencePressure == null && settled) referencePressure = smoothed
+        val reference = referencePressure
+        val deltaH = if (reference != null && settled) SensorManager.getAltitude(reference, smoothed) else null
         pressureBuffer.add(PressureSample(t, raw, smoothed, deltaH))
         seq?.let { baroLog.processed(it, "p̄=$smoothed hPa p0=$reference hPa Δh=$deltaH m") }
     }
@@ -184,12 +194,36 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun onLocation(location: Location) {
+        // Die Umrechnung lädt beim ersten Aufruf ein Geoid-Modell (I/O) und läuft daher nicht im Main-Thread.
+        viewModelScope.launch {
+            val mslAltitude = withContext(Dispatchers.IO) { altitudeAboveSeaLevel(location) }
+            onLocation(location, mslAltitude)
+        }
+    }
+
+    /**
+     * Höhe über dem Meeresspiegel. [Location.getAltitude] bezieht sich auf das WGS84-Ellipsoid und
+     * liegt in Deutschland rund 45–50 m darüber. Ohne Umrechnung (API < 34) wird keine Höhe angezeigt.
+     */
+    private fun altitudeAboveSeaLevel(location: Location): Double? {
+        if (!location.hasAltitude() || Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return null
+        if (!location.hasMslAltitude()) {
+            try {
+                altitudeConverter?.addMslAltitudeToLocation(getApplication(), location)
+            } catch (_: IOException) {
+                return null
+            }
+        }
+        return if (location.hasMslAltitude()) location.mslAltitudeMeters else null
+    }
+
+    private fun onLocation(location: Location, mslAltitude: Double?) {
         val t = location.elapsedRealtimeNanos
         val sample = GnssSample(
             timestampNanos = t,
             latitude = location.latitude,
             longitude = location.longitude,
-            altitudeM = if (location.hasAltitude()) location.altitude else null,
+            altitudeM = mslAltitude,
             accuracyM = if (location.hasAccuracy()) location.accuracy else null,
             speedMps = if (location.hasSpeed()) location.speed else null,
         )
@@ -198,7 +232,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         seq?.let {
             gnssLog.raw(
                 it,
-                "t=$t ns alt=${location.altitude} acc=${location.accuracy} speed=${location.speed}",
+                "t=$t ns alt=${location.altitude} (Ellipsoid) acc=${location.accuracy} speed=${location.speed}",
             )
         }
         gnssBuffer.add(sample)
@@ -210,7 +244,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
             speed = sample.speedMps?.let { it.format(2) + " m/s" } ?: PLACEHOLDER,
         )
         seq?.let {
-            gnssLog.processed(it, "alt=${sample.altitudeM} acc=${sample.accuracyM} v=${sample.speedMps}")
+            gnssLog.processed(it, "altMSL=${sample.altitudeM} acc=${sample.accuracyM} v=${sample.speedMps}")
         }
     }
 
@@ -250,7 +284,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         val sample = pressureBuffer.lastOrNull() ?: return previous
         return previous.copy(
             pressure = sample.smoothedHpa.format(2) + " hPa",
-            relativeAltitude = sample.relativeAltitudeM.format(2) + " m",
+            relativeAltitude = sample.relativeAltitudeM?.let { it.format(2) + " m" } ?: PLACEHOLDER,
         )
     }
 
@@ -276,9 +310,10 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         val pressure = pressureBuffer.lastSeconds(now) { it.timestampNanos }
+            .filter { it.relativeAltitudeM != null }
         barometerChart.runTransaction {
             if (pressure.isNotEmpty()) {
-                lineModel { series(pressure.xs, pressure.samples.map { it.relativeAltitudeM }) }
+                lineModel { series(pressure.xs, pressure.samples.map { it.relativeAltitudeM ?: 0f }) }
             }
         }
 
