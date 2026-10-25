@@ -36,6 +36,14 @@ fun ValueCards(state: UiState, actions: SensorScreenActions) {
 
     SensorCard("GNSS") {
         GnssStatusContent(state.gnss, actions) { gnss ->
+            if (gnss.stale) {
+                Text(
+                    "Kein aktueller Fix – Werte veraltet",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            ValueRow("Alter des Fixes", "${gnss.ageSeconds} s")
             ValueRow("Breite", gnss.latitude)
             ValueRow("Länge", gnss.longitude)
             ValueRow("Höhe ü. NN", gnss.altitude)

@@ -41,6 +41,10 @@ sealed interface GnssUi {
         val altitude: String,
         val accuracy: String,
         val speed: String,
+        /** Alter des letzten Fixes in Sekunden. */
+        val ageSeconds: Long = 0,
+        /** `true`, wenn seit [GNSS_STALE_SECONDS] kein neuer Fix kam – die Werte sind dann veraltet. */
+        val stale: Boolean = false,
     ) : GnssUi
 }
 
@@ -54,3 +58,5 @@ data class UiState(
 )
 
 const val PLACEHOLDER = "–"
+
+const val GNSS_STALE_SECONDS = 10L

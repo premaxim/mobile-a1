@@ -273,13 +273,21 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
         val newState = state.copy(
             accel = buildAccelUi(state.accel),
             barometer = buildBarometerUi(state.barometer),
-            gnss = gnssStatus,
+            gnss = withFixAge(gnssStatus, now),
             banner = banner,
         )
         _uiState.value = newState
         logDisplayed(newState)
 
         if (newState.mode == DisplayMode.CHART) updateCharts(now)
+    }
+
+    /** Ergänzt das Alter des letzten Fixes, damit veraltete Werte nicht als aktuell erscheinen. */
+    private fun withFixAge(status: GnssUi, now: Long): GnssUi {
+        val data = status as? GnssUi.Data ?: return status
+        val last = gnssBuffer.lastOrNull() ?: return status
+        val age = ((now - last.timestampNanos) / 1_000_000_000L).coerceAtLeast(0)
+        return data.copy(ageSeconds = age, stale = age >= GNSS_STALE_SECONDS)
     }
 
     private fun buildAccelUi(previous: AccelUi): AccelUi {
