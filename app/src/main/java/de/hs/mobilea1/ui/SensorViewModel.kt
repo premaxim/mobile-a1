@@ -19,6 +19,8 @@ import de.hs.mobilea1.data.PressureSample
 import de.hs.mobilea1.data.RingBuffer
 import de.hs.mobilea1.log.ChainLogger
 import de.hs.mobilea1.notify.ShakeNotifier
+import de.hs.mobilea1.processing.GnssMeasurement
+import de.hs.mobilea1.processing.GnssMeasurementResult
 import de.hs.mobilea1.processing.MeasurementResult
 import de.hs.mobilea1.processing.MovingAverage
 import de.hs.mobilea1.processing.PressureMeasurement
@@ -64,6 +66,9 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     private var referencePressure: Float? = null
     private val pressureMeasurement = PressureMeasurement()
     private val measurementResults = ArrayList<MeasurementResult>()
+    private val gnssMeasurement = GnssMeasurement()
+    private val gnssMeasurementResults = ArrayList<GnssMeasurementResult>()
+    private var lastMeasuredLocation: Location? = null
 
     private val accelLog = ChainLogger("ACC", every = 50)
     private val baroLog = ChainLogger("BARO", every = 10)
@@ -105,6 +110,7 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
 
     fun onStop() {
         pressureMeasurement.cancel()
+        gnssMeasurement.cancel()
         accelSource.stop()
         baroSource.stop()
         gnssSource.stop()
@@ -136,6 +142,24 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
     /** Messmodus: Rohwerte des Barometers 20 s lang mitteln. */
     fun startPressureMeasurement() {
         if (!pressureMeasurement.isRunning) pressureMeasurement.start(SystemClock.elapsedRealtimeNanos())
+    }
+
+    /** GNSS-Messmodus: Start bzw. Stopp per Button. */
+    fun toggleGnssMeasurement() {
+        val now = SystemClock.elapsedRealtimeNanos()
+        if (!gnssMeasurement.isRunning) {
+            lastMeasuredLocation = null
+            gnssMeasurement.start(now)
+            return
+        }
+        gnssMeasurement.stop(now)?.let { result ->
+            gnssMeasurementResults.add(result)
+            Log.i(
+                TAG_MEASUREMENT,
+                "GNSS #${gnssMeasurementResults.size} t=${result.durationS} s v=${result.meanSpeedMps} m/s " +
+                    "s=${result.distanceM} m n=${result.fixCount}",
+            )
+        }
     }
 
     fun dismissBanner() {
@@ -239,6 +263,11 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
             accuracyM = if (location.hasAccuracy()) location.accuracy else null,
             speedMps = if (location.hasSpeed()) location.speed else null,
         )
+        if (gnssMeasurement.isRunning) {
+            val step = lastMeasuredLocation?.distanceTo(location)?.toDouble() ?: 0.0
+            gnssMeasurement.addFix(sample.speedMps, step)
+            lastMeasuredLocation = location
+        }
         // Koordinaten werden bewusst nicht geloggt.
         val seq = gnssLog.nextSeq()
         seq?.let {
@@ -274,6 +303,12 @@ class SensorViewModel(application: Application) : AndroidViewModel(application) 
             accel = buildAccelUi(state.accel),
             barometer = buildBarometerUi(state.barometer),
             gnss = withFixAge(gnssStatus, now),
+            gnssMeasurementElapsedS = if (gnssMeasurement.isRunning) gnssMeasurement.elapsedSeconds(now) else null,
+            gnssMeasurements = gnssMeasurementResults.mapIndexed { i, r ->
+                val v = r.meanSpeedMps?.let { it.format(2) + " m/s" } ?: PLACEHOLDER
+                "#${i + 1}: t = ${r.durationS.format(1)} s, Ø v (GNSS) = $v, " +
+                    "Strecke = ${r.distanceM.format(1)} m (n=${r.fixCount})"
+            },
             banner = banner,
         )
         _uiState.value = newState

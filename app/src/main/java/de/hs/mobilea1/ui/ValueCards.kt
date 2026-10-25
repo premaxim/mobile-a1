@@ -1,6 +1,7 @@
 package de.hs.mobilea1.ui
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -50,6 +51,7 @@ fun ValueCards(state: UiState, actions: SensorScreenActions) {
             ValueRow("Genauigkeit", gnss.accuracy)
             ValueRow("Geschwindigkeit", gnss.speed)
         }
+        GnssMeasurementControls(state, actions.onToggleGnssMeasurement)
     }
 }
 
@@ -69,4 +71,21 @@ private fun PressureMeasurementControls(baro: BarometerUi, onStart: () -> Unit) 
         Text(if (remaining == null) "20 s mitteln" else "Messung läuft … $remaining s")
     }
     baro.measurements.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+}
+
+/** Messmodus für Experimente: zwischen Start und Stopp Dauer, Ø Geschwindigkeit und Strecke erfassen. */
+@Composable
+private fun GnssMeasurementControls(state: UiState, onToggle: () -> Unit) {
+    val elapsed = state.gnssMeasurementElapsedS
+    if (elapsed != null) {
+        val view = LocalView.current
+        DisposableEffect(Unit) {
+            view.keepScreenOn = true
+            onDispose { view.keepScreenOn = false }
+        }
+        Button(onClick = onToggle) { Text("Messung stoppen ($elapsed s)") }
+    } else {
+        OutlinedButton(onClick = onToggle) { Text("Messung starten") }
+    }
+    state.gnssMeasurements.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
 }

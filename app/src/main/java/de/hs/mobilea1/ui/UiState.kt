@@ -53,6 +53,10 @@ data class UiState(
     val accel: AccelUi = AccelUi(available = true, samplingRate = AccelSamplingRate.GAME),
     val barometer: BarometerUi = BarometerUi(available = true),
     val gnss: GnssUi = GnssUi.Waiting,
+    /** GNSS-Messmodus: laufende Sekunden, `null` wenn keine Messung läuft. */
+    val gnssMeasurementElapsedS: Long? = null,
+    /** Formatierte Ergebnisse der GNSS-Messungen (älteste zuerst). */
+    val gnssMeasurements: List<String> = emptyList(),
     /** In-App-Warnung, falls keine System-Benachrichtigung möglich ist. */
     val banner: String? = null,
 )

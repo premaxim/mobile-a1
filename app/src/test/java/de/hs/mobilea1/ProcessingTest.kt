@@ -1,6 +1,7 @@
 package de.hs.mobilea1
 
 import de.hs.mobilea1.data.RingBuffer
+import de.hs.mobilea1.processing.GnssMeasurement
 import de.hs.mobilea1.processing.MovingAverage
 import de.hs.mobilea1.processing.PressureMeasurement
 import de.hs.mobilea1.processing.RateMeter
@@ -53,6 +54,23 @@ class ProcessingTest {
         assertEquals(924.1, result.meanHpa, 1e-4)
         assertEquals(0.1, result.stdDevHpa, 1e-4)
         assertEquals(3, result.count)
+        assertFalse(measurement.isRunning)
+    }
+
+    @Test
+    fun gnssMeasurementSumsDistanceAndAveragesSpeed() {
+        val s = 1_000_000_000L
+        val measurement = GnssMeasurement()
+        measurement.addFix(9f, 99.0) // vor dem Start: ignoriert
+        measurement.start(0)
+        measurement.addFix(1.0f, 0.0)
+        measurement.addFix(1.5f, 1.4)
+        measurement.addFix(2.0f, 1.6)
+        val result = measurement.stop(2 * s)!!
+        assertEquals(2.0, result.durationS, 1e-9)
+        assertEquals(1.5, result.meanSpeedMps!!, 1e-6)
+        assertEquals(3.0, result.distanceM, 1e-9)
+        assertEquals(3, result.fixCount)
         assertFalse(measurement.isRunning)
     }
 

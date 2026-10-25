@@ -43,6 +43,7 @@ class MainActivity : ComponentActivity() {
             onSamplingRateChange = viewModel::setAccelSamplingRate,
             onDismissBanner = viewModel::dismissBanner,
             onStartPressureMeasurement = viewModel::startPressureMeasurement,
+            onToggleGnssMeasurement = viewModel::toggleGnssMeasurement,
             onOpenAppSettings = ::openAppSettings,
             onOpenLocationSettings = ::openLocationSettings,
         )
